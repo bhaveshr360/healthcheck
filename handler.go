@@ -23,19 +23,22 @@ import (
 // basicHandler is a basic Handler implementation.
 type basicHandler struct {
 	http.ServeMux
-	checksMutex     sync.RWMutex
-	livenessChecks  map[string]Check
-	readinessChecks map[string]Check
+	checksMutex        sync.RWMutex
+	livenessChecks     map[string]Check
+	readinessChecks    map[string]Check
+	startupProbeChecks map[string]Check
 }
 
 // NewHandler creates a new basic Handler
 func NewHandler() Handler {
 	h := &basicHandler{
-		livenessChecks:  make(map[string]Check),
-		readinessChecks: make(map[string]Check),
+		livenessChecks:     make(map[string]Check),
+		readinessChecks:    make(map[string]Check),
+		startupProbeChecks: make(map[string]Check),
 	}
 	h.Handle("/live", http.HandlerFunc(h.LiveEndpoint))
 	h.Handle("/ready", http.HandlerFunc(h.ReadyEndpoint))
+	h.Handle("/startup", http.HandlerFunc(h.StartupEndpoint))
 	return h
 }
 
@@ -45,6 +48,10 @@ func (s *basicHandler) LiveEndpoint(w http.ResponseWriter, r *http.Request) {
 
 func (s *basicHandler) ReadyEndpoint(w http.ResponseWriter, r *http.Request) {
 	s.handle(w, r, s.readinessChecks, s.livenessChecks)
+}
+
+func (s *basicHandler) StartupEndpoint(w http.ResponseWriter, r *http.Request) {
+	s.handle(w, r, s.startupProbeChecks)
 }
 
 func (s *basicHandler) AddLivenessCheck(name string, check Check) {
@@ -57,6 +64,12 @@ func (s *basicHandler) AddReadinessCheck(name string, check Check) {
 	s.checksMutex.Lock()
 	defer s.checksMutex.Unlock()
 	s.readinessChecks[name] = check
+}
+
+func (s *basicHandler) AddStartupProbeCheck(name string, check Check) {
+	s.checksMutex.Lock()
+	defer s.checksMutex.Unlock()
+	s.startupProbeChecks[name] = check
 }
 
 func (s *basicHandler) collectChecks(checks map[string]Check, resultsOut map[string]string, statusOut *int) {

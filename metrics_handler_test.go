@@ -31,19 +31,29 @@ func TestNewMetricsHandler(t *testing.T) {
 	handler := NewMetricsHandler(prometheus.DefaultRegisterer, "test")
 
 	for _, check := range []string{"aaa", "bbb", "ccc"} {
-		handler.AddLivenessCheck(check, func() error {
+		handler.AddStartupProbeCheck(check, func() error {
+			return nil
+		})
+
+		handler.AddLivenessCheck(strings.Join([]string{check, "live"}, "_"), func() error {
 			return nil
 		})
 	}
 
 	for _, check := range []string{"ddd", "eee", "fff"} {
-		handler.AddLivenessCheck(check, func() error {
+
+		handler.AddStartupProbeCheck(check, func() error {
+			return fmt.Errorf("failing health check %q", check)
+		})
+
+		handler.AddLivenessCheck(strings.Join([]string{check, "live"}, "_"), func() error {
 			return fmt.Errorf("failing health check %q", check)
 		})
 	}
 
 	metricsHandler := prometheus.Handler()
 	req, err := http.NewRequest("GET", "/metrics", nil)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,11 +71,17 @@ func TestNewMetricsHandler(t *testing.T) {
 	actualMetrics := strings.Join(relevantLines, "\n")
 	expectedMetrics := strings.TrimSpace(`
 test_healthcheck_status{check="aaa"} 0
+test_healthcheck_status{check="aaa_live"} 0
 test_healthcheck_status{check="bbb"} 0
+test_healthcheck_status{check="bbb_live"} 0
 test_healthcheck_status{check="ccc"} 0
+test_healthcheck_status{check="ccc_live"} 0
 test_healthcheck_status{check="ddd"} 1
+test_healthcheck_status{check="ddd_live"} 1
 test_healthcheck_status{check="eee"} 1
+test_healthcheck_status{check="eee_live"} 1
 test_healthcheck_status{check="fff"} 1
+test_healthcheck_status{check="fff_live"} 1
 `)
 	if actualMetrics != expectedMetrics {
 		t.Errorf("expected metrics:\n%s\n\nactual metrics:\n%s\n", expectedMetrics, actualMetrics)
@@ -74,8 +90,12 @@ test_healthcheck_status{check="fff"} 1
 
 func TestNewMetricsHandlerEndpoints(t *testing.T) {
 	handler := NewMetricsHandler(prometheus.NewRegistry(), "test")
-	handler.AddReadinessCheck("fail", func() error {
+	handler.AddReadinessCheck("ready_fail", func() error {
 		return fmt.Errorf("failing readiness check")
+	})
+
+	handler.AddStartupProbeCheck("startup_fail", func() error {
+		return fmt.Errorf("failing startup check")
 	})
 
 	tests := []struct {
@@ -106,6 +126,18 @@ func TestNewMetricsHandlerEndpoints(t *testing.T) {
 			name:    "custom /ready endpoint",
 			path:    "/",
 			handler: http.HandlerFunc(handler.ReadyEndpoint),
+			expect:  503,
+		},
+		{
+			name:    "default /startup endpoint",
+			path:    "/startup",
+			handler: handler,
+			expect:  503,
+		},
+		{
+			name:    "custom /startup endpoint",
+			path:    "/",
+			handler: http.HandlerFunc(handler.StartupEndpoint),
 			expect:  503,
 		},
 	}

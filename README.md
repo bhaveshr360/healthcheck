@@ -3,7 +3,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/heptiolabs/healthcheck)](https://goreportcard.com/report/github.com/heptiolabs/healthcheck)
 [![GoDoc](https://godoc.org/github.com/heptiolabs/healthcheck?status.svg)](https://godoc.org/github.com/heptiolabs/healthcheck)
 
-Healthcheck is a library for implementing Kubernetes [liveness and readiness](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/) probe handlers in your Go application.
+Healthcheck is a library for implementing Kubernetes [liveness, readiness and startup](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) probe handlers in your Go application.
 
 ## Features
 
@@ -28,6 +28,12 @@ See the [GoDoc examples](https://godoc.org/github.com/heptiolabs/healthcheck) fo
    health := healthcheck.NewHandler()
    ```
 
+- Configure some application-specific startup-probe checks
+  ```go
+   // Our app is not up until the Adapter has been loaded and initialised
+   health := healthcheck.AddStartupProbeCheck("adapter", isMyAdapterUp())
+  ```
+
  - Configure some application-specific liveness checks (whether the app itself is unhealthy):
    ```go
    // Our app is not happy if we've got more than 100 goroutines running.
@@ -45,12 +51,12 @@ See the [GoDoc examples](https://godoc.org/github.com/heptiolabs/healthcheck) fo
    health.AddReadinessCheck("database", healthcheck.DatabasePingCheck(db, 1*time.Second))
    ```
 
- - Expose the `/live` and `/ready` endpoints over HTTP (on port 8086):
+ - Expose the  `/startup`, `/live` and `/ready` endpoints over HTTP (on port 8086):
    ```go
    go http.ListenAndServe("0.0.0.0:8086", health)
    ```
 
- - Configure your Kubernetes container with HTTP liveness and readiness probes see the ([Kubernetes documentation](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/)) for more detail:
+ - Configure your Kubernetes container with HTTP startup-probe, liveness and readiness probes see the ([Kubernetes documentation](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/)) for more detail:
    ```yaml
    # this is a bare bones example
    # copy and paste livenessProbe and readinessProbe as appropriate for your app
@@ -77,7 +83,17 @@ See the [GoDoc examples](https://godoc.org/github.com/heptiolabs/healthcheck) fo
            path: /ready
            port: 8086
          periodSeconds: 5
+        
+       #define a startup-probe that 
+       startupProbe:
+         httpGet:
+           path: /startup
+           post: 8086
+         periodSeconds: 10
+         failureThreshold: 30
    ```
+
+ - once startup probe is successfull, the liveness probe will takeover. If the startup probe does not succed, then the container is killed after ```periodSecond * failureThreshold``` and subject to pod's ```restartPolicy```
 
  - If one of your readiness checks fails, Kubernetes will stop routing traffic to that pod within a few seconds (depending on `periodSeconds` and other factors).
 
@@ -86,6 +102,7 @@ See the [GoDoc examples](https://godoc.org/github.com/heptiolabs/healthcheck) fo
  ## HTTP Endpoints
  When you run `go http.ListenAndServe("0.0.0.0:8086", health)`, two HTTP endpoints are exposed:
 
+  - **`/startup`**: startup probe endpoint (HTTP 200 if successfull, HTTP 503 otherwise)
   - **`/live`**: liveness endpoint (HTTP 200 if healthy, HTTP 503 if unhealthy)
   - **`/ready`**: readiness endpoint (HTTP 200 if healthy, HTTP 503 if unhealthy)
 

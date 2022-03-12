@@ -42,6 +42,13 @@ type Handler interface {
 	// destroyed.
 	AddReadinessCheck(name string, check Check)
 
+	// AddStartupCheck adds a check that indicates that this instance of the
+	// application is starting up. Once the startup checks has succeeded once,
+	// the liveness probe takes over to provide a fast response to container
+	// deadlocks. If the startup check fails, then the container will be
+	// killed and subject to restartPolicy.
+	AddStartupProbeCheck(name string, check Check)
+
 	// LiveEndpoint is the HTTP handler for just the /live endpoint, which is
 	// useful if you need to attach it into your own HTTP handler tree.
 	LiveEndpoint(http.ResponseWriter, *http.Request)
@@ -49,4 +56,8 @@ type Handler interface {
 	// ReadyEndpoint is the HTTP handler for just the /ready endpoint, which is
 	// useful if you need to attach it into your own HTTP handler tree.
 	ReadyEndpoint(http.ResponseWriter, *http.Request)
+
+	// StartupProbeEndpoint is the HTTP Handler for just the /startup endpoint,
+	// which is useful if you need to attach it into your own HTTP handler tree
+	StartupEndpoint(http.ResponseWriter, *http.Request)
 }
